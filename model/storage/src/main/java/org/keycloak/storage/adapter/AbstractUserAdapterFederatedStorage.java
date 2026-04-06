@@ -132,6 +132,11 @@ public abstract class AbstractUserAdapterFederatedStorage extends UserModelDefau
     }
 
     @Override
+    public Stream<GroupModel> getGroupsStream(boolean withOrganizationGroups) {
+        return getGroupsStream();
+    }
+
+    @Override
     public void joinGroup(GroupModel group) {
         getFederatedStorage().joinGroup(realm, this.getId(), group);
 

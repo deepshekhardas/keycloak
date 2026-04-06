@@ -215,6 +215,15 @@ public abstract class AbstractInMemoryUserAdapter extends UserModelDefaultMethod
     }
 
     @Override
+    public Stream<GroupModel> getGroupsStream(boolean withOrganizationGroups) {
+        if(withOrganizationGroups) {
+            return groupIds.stream().map(realm::getGroupById);
+        } else {
+            return groupIds.stream().map(realm::getGroupById).filter(g -> !g.getType().equals(GroupModel.Type.ORGANIZATION));
+        }
+    }
+
+    @Override
     public void joinGroup(GroupModel group) {
         checkReadonly();
         groupIds.add(group.getId());
