@@ -20,9 +20,10 @@ package org.keycloak.models.workflow;
 import org.keycloak.Config;
 import org.keycloak.common.Profile;
 import org.keycloak.component.ComponentFactory;
+import org.keycloak.component.InternalComponentFactory;
 import org.keycloak.provider.EnvironmentDependentProviderFactory;
 
-public interface WorkflowProviderFactory<P extends WorkflowProvider> extends ComponentFactory<P, WorkflowProvider>, EnvironmentDependentProviderFactory {
+public interface WorkflowProviderFactory<P extends WorkflowProvider> extends ComponentFactory<P, WorkflowProvider>, InternalComponentFactory, EnvironmentDependentProviderFactory {
 
     @Override
     default boolean isSupported(Config.Scope config) {

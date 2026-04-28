@@ -23,11 +23,12 @@ import java.util.Set;
 import org.keycloak.Config;
 import org.keycloak.common.Profile;
 import org.keycloak.component.ComponentFactory;
+import org.keycloak.component.InternalComponentFactory;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.EnvironmentDependentProviderFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 
-public interface WorkflowStepProviderFactory<P extends WorkflowStepProvider> extends ComponentFactory<P, WorkflowStepProvider>, EnvironmentDependentProviderFactory {
+public interface WorkflowStepProviderFactory<P extends WorkflowStepProvider> extends ComponentFactory<P, WorkflowStepProvider>, InternalComponentFactory, EnvironmentDependentProviderFactory {
 
     /**
      * Supported types, usually one type but could be more (RestartStep for example)
