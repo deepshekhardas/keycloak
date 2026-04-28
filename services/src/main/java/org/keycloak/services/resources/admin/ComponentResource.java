@@ -27,6 +27,7 @@ import java.util.stream.Stream;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
@@ -43,6 +44,7 @@ import org.keycloak.common.ClientConnection;
 import org.keycloak.component.ComponentFactory;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.component.ComponentValidationException;
+import org.keycloak.component.InternalComponentFactory;
 import org.keycloak.component.SubComponentFactory;
 import org.keycloak.events.admin.OperationType;
 import org.keycloak.events.admin.ResourceType;
@@ -118,6 +120,7 @@ public class ComponentResource {
         }
 
         return components
+                .filter(component -> !isInternalComponent(component.getProviderType(), component.getProviderId()))
                 .filter(component -> Objects.isNull(name) || Objects.equals(component.getName(), name))
                 .map(component -> {
                     try {
@@ -136,6 +139,7 @@ public class ComponentResource {
     public Response create(ComponentRepresentation rep) {
         auth.realm().requireManageRealm();
         try {
+            rejectInternalComponent(rep.getProviderType(), rep.getProviderId());
             ComponentModel model = RepresentationToModel.toModel(session, rep);
             if (model.getParentId() == null) model.setParentId(realm.getId());
 
@@ -159,7 +163,7 @@ public class ComponentResource {
     public ComponentRepresentation getComponent(@PathParam("id") String id) {
         auth.realm().requireViewRealm();
         ComponentModel model = realm.getComponent(id);
-        if (model == null) {
+        if (model == null || isInternalComponent(model.getProviderType(), model.getProviderId())) {
             throw new NotFoundException("Could not find component");
         }
         ComponentRepresentation rep = ModelToRepresentation.toRepresentation(session, model, false);
@@ -178,6 +182,7 @@ public class ComponentResource {
             if (model == null) {
                 throw new NotFoundException("Could not find component");
             }
+            rejectInternalComponent(model.getProviderType(), model.getProviderId());
             RepresentationToModel.updateComponent(session, rep, model, false);
             adminEvent.operation(OperationType.UPDATE).resourcePath(session.getContext().getUri()).representation(rep).success();
             realm.updateComponent(model);
@@ -198,6 +203,7 @@ public class ComponentResource {
         if (model == null) {
             throw new NotFoundException("Could not find component");
         }
+        rejectInternalComponent(model.getProviderType(), model.getProviderId());
         adminEvent.operation(OperationType.DELETE).resourcePath(session.getContext().getUri()).success();
         realm.removeComponent(model);
     }
@@ -236,7 +242,7 @@ public class ComponentResource {
     public Stream<ComponentTypeRepresentation> getSubcomponentConfig(@PathParam("id") String parentId, @QueryParam("type") String subtype) {
         auth.realm().requireViewRealm();
         ComponentModel parent = realm.getComponent(parentId);
-        if (parent == null) {
+        if (parent == null || isInternalComponent(parent.getProviderType(), parent.getProviderId())) {
             throw new NotFoundException("Could not find parent component");
         }
         if (subtype == null) {
@@ -251,7 +257,25 @@ public class ComponentResource {
 
         return session.getKeycloakSessionFactory().getProviderFactoriesStream(providerClass)
             .filter(ComponentFactory.class::isInstance)
+            .filter(factory -> !(factory instanceof InternalComponentFactory))
             .map(factory -> toComponentTypeRepresentation(factory, parent));
+    }
+
+    private boolean isInternalComponent(String providerType, String providerId) {
+        try {
+            Class<? extends Provider> providerClass = session.getProviderClass(providerType);
+            if (providerClass == null) return false;
+            ProviderFactory<?> factory = session.getKeycloakSessionFactory().getProviderFactory(providerClass, providerId);
+            return factory instanceof InternalComponentFactory;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private void rejectInternalComponent(String providerType, String providerId) {
+        if (isInternalComponent(providerType, providerId)) {
+            throw new ForbiddenException("Components managed through internal APIs cannot be managed through the component endpoint");
+        }
     }
 
     private ComponentTypeRepresentation toComponentTypeRepresentation(ProviderFactory factory, ComponentModel parent) {
