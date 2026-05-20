@@ -235,6 +235,11 @@ public class UserModelDelegate implements UserModel {
     }
 
     @Override
+    public Stream<GroupModel> getGroupsStream(boolean withOrganizationGroups) {
+        return delegate.getGroupsStream(withOrganizationGroups);
+    }
+
+    @Override
     public void joinGroup(GroupModel group) {
         delegate.joinGroup(group);
 

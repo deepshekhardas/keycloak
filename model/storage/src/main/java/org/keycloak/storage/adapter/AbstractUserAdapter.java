@@ -132,6 +132,11 @@ public abstract class AbstractUserAdapter extends UserModelDefaultMethods {
     }
 
     @Override
+    public Stream<GroupModel> getGroupsStream(boolean withOrganizationGroups) {
+        return getGroupsStream();
+    }
+
+    @Override
     public void joinGroup(GroupModel group) {
         throw new ReadOnlyException("user is read only for this update");
 

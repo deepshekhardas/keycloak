@@ -417,6 +417,15 @@ public class UserAdapter implements UserModel, JpaModel<UserEntity> {
     }
 
     @Override
+    public Stream<GroupModel> getGroupsStream(boolean withOrganizationGroups) {
+        Stream<GroupModel> groups = getGroupsStream();
+        if (!withOrganizationGroups && Profile.isFeatureEnabled(Feature.ORGANIZATION)) {
+            return groups.filter(g -> !g.getType().equals(GroupModel.Type.ORGANIZATION));
+        }
+        return groups;
+    }
+
+    @Override
     public Stream<GroupModel> getGroupsStream(String search, Integer first, Integer max) {
         return session.groups().getGroupsStream(realm, closing(createGetGroupsQuery().getResultStream()), search, first, max);
     }
