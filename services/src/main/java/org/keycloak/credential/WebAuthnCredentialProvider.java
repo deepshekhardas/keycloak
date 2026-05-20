@@ -257,8 +257,8 @@ public class WebAuthnCredentialProvider implements CredentialProvider<WebAuthnCr
                 }
             }
         } catch (WebAuthnException wae) {
-            wae.printStackTrace();
-            throw(wae);
+            logger.error("WebAuthn authentication failed", wae);
+            throw wae;
         }
         // no authenticator matched
         return false;
