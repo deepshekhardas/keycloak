@@ -717,9 +717,6 @@ public class ExportImportTest {
             }
             setEventsConfig(testRealm1);
             setLocalizationTexts(testRealm1);
-
-            setEventsConfig(testRealm1);
-            setLocalizationTexts(testRealm1);
             return RealmBuilder.update(testRealm1);
         }
     }
