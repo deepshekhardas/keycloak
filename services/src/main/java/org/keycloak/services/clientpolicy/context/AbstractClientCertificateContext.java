@@ -16,6 +16,8 @@
  */
 package org.keycloak.services.clientpolicy.context;
 
+import java.util.Objects;
+
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.representations.JsonWebToken;
@@ -42,7 +44,7 @@ abstract class AbstractClientCertificateContext implements ClientCertificateCont
         this.targetClient = targetClient;
         this.attributePrefix = attributePrefix;
         this.proposed = sanitizeCertificate(proposed);
-        this.adminAuth = adminAuth;
+        this.adminAuth = Objects.requireNonNull(adminAuth, "adminAuth");
     }
 
     @Override
@@ -57,7 +59,7 @@ abstract class AbstractClientCertificateContext implements ClientCertificateCont
 
     @Override
     public CertificateRepresentation getProposedCertificate() {
-        return sanitizeCertificate(proposed);
+        return proposed;
     }
 
     @Override

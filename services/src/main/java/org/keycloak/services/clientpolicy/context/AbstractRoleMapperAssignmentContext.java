@@ -17,6 +17,7 @@
 package org.keycloak.services.clientpolicy.context;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.RoleMapperModel;
@@ -46,7 +47,7 @@ abstract class AbstractRoleMapperAssignmentContext implements RoleMapperAssignme
         this.roleMapper = roleMapper;
         this.roleContainerClient = roleContainerClient;
         this.roles = roles == null ? null : List.copyOf(roles);
-        this.adminAuth = adminAuth;
+        this.adminAuth = Objects.requireNonNull(adminAuth, "adminAuth");
     }
 
     @Override

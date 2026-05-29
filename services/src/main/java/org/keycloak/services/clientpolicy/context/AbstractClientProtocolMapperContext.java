@@ -16,6 +16,8 @@
  */
 package org.keycloak.services.clientpolicy.context;
 
+import java.util.Objects;
+
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.representations.JsonWebToken;
@@ -34,7 +36,7 @@ abstract class AbstractClientProtocolMapperContext implements ClientProtocolMapp
     protected final AdminAuth adminAuth;
 
     AbstractClientProtocolMapperContext(AdminAuth adminAuth) {
-        this.adminAuth = adminAuth;
+        this.adminAuth = Objects.requireNonNull(adminAuth, "adminAuth");
     }
 
     @Override

@@ -230,6 +230,13 @@ public class ScopeMappedResource {
             throw new NotFoundException("Could not find client");
         }
 
+        for (RoleRepresentation role : roles) {
+            RoleModel roleModel = realm.getRoleById(role.getId());
+            if (roleModel == null) {
+                throw new NotFoundException("Role not found");
+            }
+        }
+
         try {
             session.clientPolicy().triggerOnEvent(new ClientScopeMappingRegisterContext(scopeContainer, null, roles, auth.adminAuth()));
         } catch (ClientPolicyException cpe) {
@@ -237,11 +244,7 @@ public class ScopeMappedResource {
         }
 
         for (RoleRepresentation role : roles) {
-            RoleModel roleModel = realm.getRoleById(role.getId());
-            if (roleModel == null) {
-                throw new NotFoundException("Role not found");
-            }
-            scopeContainer.addScopeMapping(roleModel);
+            scopeContainer.addScopeMapping(realm.getRoleById(role.getId()));
         }
 
         adminEvent.operation(OperationType.CREATE).resourcePath(session.getContext().getUri()).representation(roles).success();

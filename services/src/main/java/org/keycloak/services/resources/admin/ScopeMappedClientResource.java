@@ -167,6 +167,13 @@ public class ScopeMappedClientResource {
     public void addClientScopeMapping(List<RoleRepresentation> roles) {
         managePermission.require();
 
+        for (RoleRepresentation role : roles) {
+            RoleModel roleModel = scopedClient.getRole(role.getName());
+            if (roleModel == null) {
+                throw new NotFoundException("Role not found");
+            }
+        }
+
         try {
             session.clientPolicy().triggerOnEvent(new ClientScopeMappingRegisterContext(scopeContainer, scopedClient, roles, auth.adminAuth()));
         } catch (ClientPolicyException cpe) {
@@ -174,11 +181,7 @@ public class ScopeMappedClientResource {
         }
 
         for (RoleRepresentation role : roles) {
-            RoleModel roleModel = scopedClient.getRole(role.getName());
-            if (roleModel == null) {
-                throw new NotFoundException("Role not found");
-            }
-            scopeContainer.addScopeMapping(roleModel);
+            scopeContainer.addScopeMapping(scopedClient.getRole(role.getName()));
         }
 
         adminEvent.operation(OperationType.CREATE).resourcePath(session.getContext().getUri()).representation(roles).success();
