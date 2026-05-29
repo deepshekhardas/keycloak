@@ -139,7 +139,9 @@ final class CborUtil {
 
         @Override
         public void serialize(JsonGenerator generator, SerializerProvider provider) throws IOException {
-            ((CBORGenerator) generator).writeTag(tag);
+            if (generator instanceof CBORGenerator) {
+                ((CBORGenerator) generator).writeTag(tag);
+            }
             generator.writeObject(value);
         }
 
@@ -160,6 +162,14 @@ final class CborUtil {
 
         @Override
         public void serialize(JsonGenerator generator, SerializerProvider provider) throws IOException {
+            if (!(generator instanceof CBORGenerator)) {
+                generator.writeStartObject();
+                for (Map.Entry<Integer, Integer> entry : value.entrySet().stream().sorted(Map.Entry.comparingByKey()).collect(Collectors.toList())) {
+                    generator.writeNumberField(entry.getKey().toString(), entry.getValue());
+                }
+                generator.writeEndObject();
+                return;
+            }
             CBORGenerator cborGenerator = (CBORGenerator) generator;
             cborGenerator.writeStartObject(value.size());
             for (Map.Entry<Integer, Integer> entry : value.entrySet().stream().sorted(Map.Entry.comparingByKey()).collect(Collectors.toList())) {

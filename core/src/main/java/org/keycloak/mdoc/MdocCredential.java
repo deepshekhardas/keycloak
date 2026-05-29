@@ -86,8 +86,6 @@ public class MdocCredential {
             byte[] issuerSigned = CborUtil.encode(buildIssuerSigned(issuerNameSpaces, issuerAuth));
 
             return MdocIssuerSignedDocument.fromIssuerSigned(issuerSigned);
-        } catch (MdocException e) {
-            throw e;
         } catch (Exception e) {
             throw new MdocException("Could not sign mDoc credential", e);
         }

@@ -76,7 +76,7 @@ final class MdocDeviceKey {
 
     private static COSEAlgorithmIdentifier coseAlgorithm(JWK jwk) {
         if (jwk.getAlgorithm() == null) {
-            return null;
+            throw new MdocException("mDoc proof key is missing algorithm");
         }
         return MdocAlgorithm.fromJoseAlgorithm(jwk.getAlgorithm()).toCoseAlgorithmIdentifier();
     }

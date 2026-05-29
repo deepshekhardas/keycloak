@@ -58,8 +58,14 @@ public class MdocCredentialBuilder implements CredentialBuilder {
 
         MdocValidityInfo validityInfo = MdocValidityInfo.issuedAt(issuanceInstant, expirationInstant);
 
-        Map<String, Object> claims = new LinkedHashMap<>(verifiableCredential.getCredentialSubject().getClaims());
-        return new MdocCredentialBody(docType, claims, validityInfo);
+        if (verifiableCredential.getCredentialSubject() == null) {
+            throw new CredentialBuilderException("mDoc issuance requires credentialSubject");
+        }
+        Map<String, Object> claims = verifiableCredential.getCredentialSubject().getClaims();
+        if (claims == null) {
+            throw new CredentialBuilderException("mDoc issuance requires claims in credentialSubject");
+        }
+        return new MdocCredentialBody(docType, new LinkedHashMap<>(claims), validityInfo);
     }
 
     @Override

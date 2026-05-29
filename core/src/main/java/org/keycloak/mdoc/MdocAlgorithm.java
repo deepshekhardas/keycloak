@@ -53,8 +53,8 @@ public enum MdocAlgorithm {
         return joseAlgorithm;
     }
 
-    public int getCoseAlgorithmIdentifier() {
-        return (int) coseAlgorithmIdentifier.getValue();
+    public long getCoseAlgorithmIdentifier() {
+        return coseAlgorithmIdentifier.getValue();
     }
 
     public COSEAlgorithmIdentifier toCoseAlgorithmIdentifier() {
