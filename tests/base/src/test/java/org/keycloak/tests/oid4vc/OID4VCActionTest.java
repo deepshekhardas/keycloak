@@ -5,18 +5,20 @@ import java.io.IOException;
 import org.keycloak.authentication.RequiredActionContext;
 import org.keycloak.events.Details;
 import org.keycloak.events.EventType;
-import org.keycloak.protocol.oid4vc.issuance.requiredactions.VerifiableCredentialOfferAction;
+import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.protocol.oid4vc.model.CredentialResponse;
 import org.keycloak.protocol.oid4vc.model.CredentialsOffer;
+import org.keycloak.representations.idm.oid4vc.CredentialOfferActionConfig;
 import org.keycloak.sdjwt.IssuerSignedJWT;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.keycloak.testframework.annotations.InjectUser;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 import org.keycloak.testframework.events.EventAssertion;
 import org.keycloak.testframework.realm.ManagedUser;
+import org.keycloak.testframework.realm.UserBuilder;
+import org.keycloak.testframework.realm.UserConfig;
 import org.keycloak.testframework.ui.annotations.InjectPage;
 import org.keycloak.testframework.ui.page.OID4VCCredentialOfferPage;
-import org.keycloak.tests.common.TestRealmUserConfig;
 import org.keycloak.tests.utils.Assert;
 import org.keycloak.testsuite.util.oauth.AccessTokenResponse;
 import org.keycloak.testsuite.util.oauth.AuthorizationEndpointResponse;
@@ -35,6 +37,7 @@ import static org.keycloak.events.Details.GRANT_TYPE;
 import static org.keycloak.events.Details.REASON;
 import static org.keycloak.events.Errors.CLIENT_NOT_FOUND;
 import static org.keycloak.events.Errors.INVALID_CLIENT;
+import static org.keycloak.events.Errors.INVALID_REQUEST;
 import static org.keycloak.events.Errors.REJECTED_BY_USER;
 import static org.keycloak.protocol.oid4vc.model.ErrorType.INVALID_CREDENTIAL_OFFER_REQUEST;
 import static org.keycloak.protocol.oid4vc.model.ErrorType.MISSING_CREDENTIAL_CONFIG;
@@ -43,6 +46,7 @@ import static org.keycloak.protocol.oid4vc.model.ErrorType.UNKNOWN_CREDENTIAL_CO
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 @KeycloakIntegrationTest(config = OID4VCIssuerTestBase.VCTestServerConfig.class)
@@ -51,7 +55,7 @@ public class OID4VCActionTest extends OID4VCIssuerTestBase {
     @InjectPage
     OID4VCCredentialOfferPage credentialOfferPage;
 
-    @InjectUser(config = TestRealmUserConfig.class)
+    @InjectUser(config = OID4VCTestUserConfig.class)
     ManagedUser user;
 
     OID4VCTestContext ctx;
@@ -64,7 +68,7 @@ public class OID4VCActionTest extends OID4VCIssuerTestBase {
 
     public static String getKcActionParameter(String clientId, String credentialConfigId, boolean preAuthorized) {
         try {
-            VerifiableCredentialOfferAction.CredentialOfferActionConfig cfg = new VerifiableCredentialOfferAction.CredentialOfferActionConfig();
+            CredentialOfferActionConfig cfg = new CredentialOfferActionConfig();
             cfg.setCredentialConfigurationId(credentialConfigId);
             cfg.setPreAuthorized(preAuthorized);
             cfg.setClientId(clientId);
@@ -107,6 +111,9 @@ public class OID4VCActionTest extends OID4VCIssuerTestBase {
                 .details(Details.VERIFIABLE_CREDENTIAL_TARGET_USER_ID, user.getId())
                 .details(Details.VERIFIABLE_CREDENTIAL_TARGET_CLIENT_ID, client.getClientId())
                 .type(EventType.VERIFIABLE_CREDENTIAL_CREATE_OFFER);
+
+        // Wait 2 minutes (just to test that credential-offer with default expiration (5 minutes) will not expire)
+        timeOffSet.set(120);
 
         // Refresh screen. Should be still same credential-offer as before and test that there are not new events
         driver.navigate().refresh();
@@ -266,6 +273,7 @@ public class OID4VCActionTest extends OID4VCIssuerTestBase {
         oauth.fillLoginForm(user.getUsername(), TEST_PASSWORD);
 
         credentialOfferPage.assertCurrent();
+        assertTrue(credentialOfferPage.isCancelDisplayed());
         String credentialOfferUri = credentialOfferPage.getCredentialOfferUri();
         String credentialOfferNonce = getNonceFromCredentialOfferUri(credentialOfferUri);
         events.clear();
@@ -366,6 +374,53 @@ public class OID4VCActionTest extends OID4VCIssuerTestBase {
                 .type(EventType.VERIFIABLE_CREDENTIAL_CREATE_OFFER_ERROR);
 
         events.clear();
+    }
+
+    // Test kc_action_parameter referencing credential-offer of credential, which user does not have
+    @Test
+    public void testMissingCredentialOfferForUser() {
+        oauth.client(client.getClientId(), client.getSecret());
+
+        oauth.loginForm()
+                .kcAction(getKcActionParameter(client.getClientId(), sdJwtTypeNaturalPersonScopeName, false))
+                .open();
+        oauth.fillLoginForm(user.getUsername(), TEST_PASSWORD);
+
+        AuthorizationEndpointResponse authzCodeResponse = new AuthorizationEndpointResponse(oauth);
+        assertNotNull(authzCodeResponse.getCode());
+        assertEquals(RequiredActionContext.KcActionStatus.ERROR.name().toLowerCase(), authzCodeResponse.getKcActionStatus());
+
+        EventAssertion.assertError(events.poll())
+                .userId(user.getId())
+                .clientId(client.getClientId())
+                .error(INVALID_REQUEST)
+                .details(REASON, "User 'test-user@localhost' does not have verifiable credential 'oid4vc_natural_person_sd'.")
+                .type(EventType.VERIFIABLE_CREDENTIAL_CREATE_OFFER_ERROR);
+        events.clear();
+    }
+
+    public static class OID4VCTestUserConfig implements UserConfig {
+
+        @Override
+        public UserBuilder configure(UserBuilder user) {
+            return UserBuilder.create()
+                    .id(KeycloakModelUtils.generateId())
+                    .username("test-user@localhost")
+                    .enabled(true)
+                    .email("test-user@localhost")
+                    .emailVerified(true)
+                    .firstName("Tom")
+                    .lastName("Brady")
+                    .password(TEST_PASSWORD)
+                    .attribute("address_street_address", "221B Baker Street")
+                    .attribute("address_locality", "London")
+                    //.realmRoles("account", "manage-account", "view-profile")
+                    .verifiableCredential(jwtTypeCredentialScopeName)
+                    .verifiableCredential(sdJwtTypeCredentialScopeName)
+                    .verifiableCredential(minimalJwtTypeCredentialScopeName);
+//                    .verifiableCredential(jwtTypeNaturalPersonScopeName)
+//                    .verifiableCredential(sdJwtTypeNaturalPersonScopeName);
+        }
     }
 
 }
