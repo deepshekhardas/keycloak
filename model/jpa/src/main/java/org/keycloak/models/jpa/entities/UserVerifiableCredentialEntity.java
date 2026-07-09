@@ -15,7 +15,7 @@ import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(name="USER_VER_CREDENTIAL", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"USER_ID", "CREDENTIAL_SCOPE_ID"})
+        @UniqueConstraint(columnNames = {"USER_ID", "CREDENTIAL_SCOPE_NAME"})
 })
 @NamedQueries({
         @NamedQuery(name="verifiableCredentialsByUser", query="select vc from UserVerifiableCredentialEntity vc where vc.user.id = :userId"),
