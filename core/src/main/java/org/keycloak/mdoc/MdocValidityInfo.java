@@ -36,6 +36,12 @@ public class MdocValidityInfo {
         this.signed = Objects.requireNonNull(signed, "signed");
         this.validFrom = Objects.requireNonNull(validFrom, "validFrom");
         this.validUntil = Objects.requireNonNull(validUntil, "validUntil");
+        if (signed.isAfter(validFrom)) {
+            throw new IllegalArgumentException("signed must not be after validFrom");
+        }
+        if (validFrom.isAfter(validUntil)) {
+            throw new IllegalArgumentException("validFrom must not be after validUntil");
+        }
     }
 
     /**

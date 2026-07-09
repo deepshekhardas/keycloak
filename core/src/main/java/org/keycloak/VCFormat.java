@@ -44,7 +44,7 @@ public interface VCFormat {
      */
     String MSO_MDOC = "mso_mdoc";
 
-    String[] SUPPORTED_FORMATS = new String[]{JWT_VC, SD_JWT_VC};
+    String[] SUPPORTED_FORMATS = new String[]{JWT_VC, SD_JWT_VC, MSO_MDOC};
 
     static String getFromScope(String scope) {
         String format = SD_JWT_VC; // default format

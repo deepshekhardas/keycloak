@@ -11,7 +11,7 @@ Note that OAuth 2.0 recommends exact string matching in the link:https://datatra
 
 === Client scope evaluation now enforces access to the user when generating tokens
 
-In previous versions of {project_name}, client scope evaluation allow generating tokens without necessarily having
+In previous versions of {project_name}, client scope evaluation allowed generating tokens without necessarily having
 the necessary admin roles or permissions to access the user.
 
 In this release, client scope evaluation now requires at the very least the `view-users` admin role granted to the

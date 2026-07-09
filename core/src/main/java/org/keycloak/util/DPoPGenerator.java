@@ -20,6 +20,7 @@ package org.keycloak.util;
 import java.security.Key;
 import java.security.KeyPair;
 import java.security.PrivateKey;
+import java.security.interfaces.ECPublicKey;
 
 import org.keycloak.OAuth2Constants;
 import org.keycloak.common.util.SecretGenerator;
@@ -60,6 +61,9 @@ public class DPoPGenerator {
     }
 
     public static JWK createEcJwk(Key publicKey) {
+        if (!(publicKey instanceof ECPublicKey)) {
+            throw new IllegalArgumentException("Expected EC key but got: " + publicKey.getClass().getName());
+        }
         return JWKBuilder.create().ec(publicKey);
     }
 

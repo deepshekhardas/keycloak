@@ -260,7 +260,7 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
         var cm = getDefaultCacheManager(session, holder);
         if (cm.getCacheManagerConfiguration().metrics().enabled()) {
             var transport = GlobalComponentRegistry.componentOf(cm, Transport.class);
-            if (transport != null) {
+            if (transport != null && transport instanceof JGroupsTransport) {
                 // we miss some messages stats (aka state transfer) by enabling this late.
                 // but here works for all stacks, including custom ones by users.
                 ((JGroupsTransport) transport).getChannel().getProtocolStack().getTransport().enableStats(true);

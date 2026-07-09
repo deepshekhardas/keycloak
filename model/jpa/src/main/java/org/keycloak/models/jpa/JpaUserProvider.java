@@ -392,6 +392,9 @@ public class JpaUserProvider implements UserProvider, UserCredentialStore, JpaUs
             userAttributes = verifCredentialModel.getUserAttributes();
         } else {
             UserModel user = getUserById(session.getContext().getRealm(), userId);
+            if (user == null) {
+                throw new ModelException("User not found for id: " + userId);
+            }
             userAttributes = user.getAttributes();
         }
 
