@@ -721,6 +721,18 @@ public class OID4VCIssuerEndpoint {
         }
     }
 
+    private void checkUserHasVerifiableCredential(UserModel user, CredentialScopeModel requestedCredential, EventBuilder event) {
+        if (!OID4VCUtil.hasVerifiableCredential(session, user, requestedCredential)) {
+            String errorMessage = String.format("User '%s' does not have requested verifiable credential '%s'", user.getUsername(), requestedCredential.getCredentialConfigurationId());
+            LOGGER.debugf(errorMessage);
+            event.detail(Details.REASON, errorMessage).error(ErrorType.INVALID_CREDENTIAL_REQUEST.getValue());
+            throw new CorsErrorResponseException(cors,
+                    ErrorType.INVALID_CREDENTIAL_REQUEST.getValue(),
+                    errorMessage,
+                    Response.Status.BAD_REQUEST);
+        }
+    }
+
     /**
      * Returns a verifiable credential
      */
@@ -957,6 +969,7 @@ public class OID4VCIssuerEndpoint {
         eventBuilder.detail(Details.CREDENTIAL_TYPE, authorizedCredentialConfigurationId);
 
         checkScope(authorizedCredentialScope);
+        checkUserHasVerifiableCredential(userModel, authorizedCredentialScope, eventBuilder);
 
         SupportedCredentialConfiguration supportedCredential =
                 OID4VCIssuerWellKnownProvider.toSupportedCredentialConfiguration(session, authorizedCredentialScope);
@@ -1589,6 +1602,7 @@ public class OID4VCIssuerEndpoint {
                     return null;
                 })
                 .filter(Objects::nonNull)
+                .filter(mapper -> mapper.supportsCredentialFormat(credentialScopeModel.getFormat()))
                 .toList();
 
         VCIssuanceContext vcIssuanceContext = getVCToSign(protocolMappers, credentialConfig, authResult, authDetail, credentialRequestVO, credentialScopeModel, eventBuilder);
@@ -1690,8 +1704,14 @@ public class OID4VCIssuerEndpoint {
         String credentialConfigId = credentialConfig.getId();
         validateRequestedClaimsArePresent(subjectClaimsWithMetadataPrefix, credentialConfig, authResult.user(), authDetail, credentialConfigId, eventBuilder);
 
+        // OID4VCI 1.0 Appendix C.2 gives ISO mdoc paths namespace/data-element semantics. The metadata-prefixed
+        // claim map already has that namespace -> data element layout; JSON-based formats keep credentialSubject.
+        Map<String, Object> credentialSubjectClaims = VCFormat.MSO_MDOC.equals(credentialConfig.getFormat())
+                ? subjectClaimsWithMetadataPrefix
+                : subjectClaims;
+
         // Include all available claims
-        subjectClaims.forEach((key, value) -> vc.getCredentialSubject().setClaims(key, value));
+        credentialSubjectClaims.forEach((key, value) -> vc.getCredentialSubject().setClaims(key, value));
 
         protocolMappers.forEach(mapper -> mapper.setClaim(vc, authResult.session()));
 

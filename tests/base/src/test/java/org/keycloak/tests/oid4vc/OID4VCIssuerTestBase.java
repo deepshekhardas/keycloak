@@ -25,6 +25,7 @@ import java.util.stream.Stream;
 import org.keycloak.OID4VCConstants;
 import org.keycloak.VCFormat;
 import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.ClientPoliciesPoliciesResource;
 import org.keycloak.admin.client.resource.ClientScopeResource;
 import org.keycloak.admin.client.resource.ClientScopesResource;
 import org.keycloak.admin.client.resource.RealmResource;
@@ -51,11 +52,13 @@ import org.keycloak.protocol.oid4vc.issuance.OID4VCAuthorizationDetailsParser;
 import org.keycloak.protocol.oid4vc.issuance.TimeProvider;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCGeneratedIdMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCIssuedAtTimeClaimMapper;
+import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.CredentialScopeRepresentation;
 import org.keycloak.protocol.oid4vc.model.CredentialSubject;
 import org.keycloak.protocol.oid4vc.model.DisplayObject;
 import org.keycloak.protocol.oid4vc.model.OID4VCAuthorizationDetail;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
+import org.keycloak.representations.idm.ClientPoliciesRepresentation;
 import org.keycloak.representations.idm.ClientPolicyConditionRepresentation;
 import org.keycloak.representations.idm.ClientPolicyExecutorRepresentation;
 import org.keycloak.representations.idm.ClientPolicyRepresentation;
@@ -69,6 +72,17 @@ import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.representations.userprofile.config.UPConfig;
+import org.keycloak.services.clientpolicy.executor.ConfidentialClientAcceptExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.DPoPBindEnforcerExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.FullScopeDisabledExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.PKCEEnforcerExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.RejectImplicitGrantExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.SecureClientAuthenticationAssertionExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.SecureClientAuthenticatorExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.SecureClientUrisExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.SecureParContentsExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.SecureSigningAlgorithmExecutorFactory;
+import org.keycloak.services.clientpolicy.executor.SecureSigningAlgorithmForSignedJwtExecutorFactory;
 import org.keycloak.testframework.annotations.InjectAdminClient;
 import org.keycloak.testframework.annotations.InjectClient;
 import org.keycloak.testframework.annotations.InjectEvents;
@@ -107,6 +121,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 
 import static org.keycloak.OID4VCConstants.CLAIM_NAME_SUBJECT_ID;
+import static org.keycloak.OID4VCConstants.CRYPTOGRAPHIC_BINDING_METHOD_COSE_KEY;
 import static org.keycloak.OID4VCConstants.OID4VCI_ENABLED_ATTRIBUTE_KEY;
 import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 import static org.keycloak.constants.OID4VCIConstants.CREDENTIAL_OFFER_CREATE;
@@ -116,7 +131,6 @@ import static org.keycloak.models.oid4vci.CredentialScopeModel.VC_BINDING_REQUIR
 import static org.keycloak.models.oid4vci.CredentialScopeModel.VC_BINDING_REQUIRED_PROOF_TYPES;
 import static org.keycloak.models.oid4vci.CredentialScopeModel.VC_CRYPTOGRAPHIC_BINDING_METHODS;
 import static org.keycloak.models.oid4vci.CredentialScopeModel.VC_FORMAT_DEFAULT;
-import static org.keycloak.protocol.oid4vc.clientpolicy.CredentialClientPolicies.VC_POLICY_CREDENTIAL_OFFER_REQUIRED;
 
 /**
  * Abstract base class for OID4VCI Testing
@@ -128,6 +142,7 @@ public abstract class OID4VCIssuerTestBase {
     protected final Logger log = Logger.getLogger(getClass());
 
     public static final String OID4VCI_CLIENT_ID = "oid4vci-client";
+    public static final String OID4VCI_ABCA_CLIENT_ID = "oid4vci-client-abca";
     public static final String OID4VCI_PUBLIC_CLIENT_ID = "oid4vci-client-pub";
 
     public static final String TEST_ISSUER_DID = "did:web:test.org";
@@ -137,6 +152,8 @@ public abstract class OID4VCIssuerTestBase {
 
     public static final String jwtTypeNaturalPersonScopeName = "oid4vc_natural_person_jwt";
     public static final String sdJwtTypeNaturalPersonScopeName = "oid4vc_natural_person_sd";
+    public static final String mdocTypeNaturalPersonScopeName = "oid4vc_natural_person_mdoc";
+    public static final String naturalPersonCredentialDocType = "oid4vc_natural_person";
 
     public static final String sdJwtTypeCredentialScopeName = "sd-jwt-credential";
     public static final String sdJwtTypeCredentialConfigurationIdName = "sd-jwt-credential-config-id";
@@ -147,20 +164,30 @@ public abstract class OID4VCIssuerTestBase {
     public static final String minimalJwtTypeCredentialScopeName = "vc-with-minimal-config";
     public static final String minimalJwtTypeCredentialConfigurationIdName = "vc-with-minimal-config-id";
 
+    public static final String mdocTypeCredentialScopeName = "mdoc-credential";
+    public static final String mdocTypeCredentialConfigurationIdName = "mdoc-credential-config-id";
+    public static final String mdocTypeCredentialDocType = "org.iso.18013.5.1.mDL";
+
     public static final String CONTEXT_URL = "https://www.w3.org/2018/credentials/v1";
-    protected static final List<String> TEST_TYPES = List.of("VerifiableCredential");
-    protected static final Instant TEST_EXPIRATION_DATE = Instant.ofEpochMilli(Time.currentTimeMillis())
+    public static final List<String> TEST_TYPES = List.of("VerifiableCredential");
+    public static final Instant TEST_EXPIRATION_DATE = Instant.ofEpochMilli(Time.currentTimeMillis())
             .plus(365, ChronoUnit.DAYS)
             .truncatedTo(ChronoUnit.SECONDS);
-    protected static final Instant TEST_ISSUANCE_DATE = Instant.ofEpochSecond(1000);
+    public static final Instant TEST_ISSUANCE_DATE = Instant.ofEpochSecond(1000);
+
+    public static final String VCI_CLIENT_POLICY_HAIP = "oid4vc-haip-policy";
+    public static final String VCI_CLIENT_POLICY_OFFER_REQUIRED = "oid4vci-offer-required";
 
     @InjectRealm(config = VCTestRealmConfig.class)
     protected ManagedRealm testRealm;
 
-    @InjectClient(ref = OID4VCI_CLIENT_ID, config = ConfidentialOID4VCIClient.class)
+    @InjectClient(ref = OID4VCI_CLIENT_ID, config = OID4VCConfidentialClient.class)
     protected ManagedClient managedClient;
 
-    @InjectClient(ref = OID4VCI_PUBLIC_CLIENT_ID, config = PublicOID4VCIClient.class)
+    @InjectClient(ref = OID4VCI_ABCA_CLIENT_ID, config = OID4VCAttestationBasedClient.class)
+    ManagedClient managedAttestationBasedClient;
+
+    @InjectClient(ref = OID4VCI_PUBLIC_CLIENT_ID, config = OID4VCPublicClient.class)
     ManagedClient managedPublicClient;
 
     @InjectOAuthClient
@@ -186,11 +213,14 @@ public abstract class OID4VCIssuerTestBase {
 
     protected CredentialScopeRepresentation jwtTypeCredentialScope;
     protected CredentialScopeRepresentation sdJwtTypeCredentialScope;
+    protected CredentialScopeRepresentation mdocTypeCredentialScope;
     protected CredentialScopeRepresentation minimalJwtTypeCredentialScope;
     protected CredentialScopeRepresentation jwtNaturalPersonCredentialScope;
     protected CredentialScopeRepresentation sdJwtNaturalPersonCredentialScope;
+    protected CredentialScopeRepresentation mdocNaturalPersonCredentialScope;
 
     protected ClientRepresentation client;
+    protected ClientRepresentation abcaClient;
     protected ClientRepresentation pubClient;
     protected OID4VCBasicWallet wallet;
 
@@ -207,7 +237,7 @@ public abstract class OID4VCIssuerTestBase {
         boolean isRestCredentialEnabled = runOnServer.fetch(session -> Profile.isFeatureEnabled(Profile.Feature.OID4VC_VCI_REST_CREDENTIAL_OFFER), Boolean.class);
 
         if (isRestCredentialEnabled) {
-            UserRepresentation testUser = getExistingUser(TEST_USER);
+            UserRepresentation testUser = requireExistingUser(TEST_USER);
             RoleRepresentation credentialOfferRole = realmResource.roles().get(CREDENTIAL_OFFER_CREATE.getName()).toRepresentation();
             testUser.setRealmRoles(List.of(CREDENTIAL_OFFER_CREATE.getName()));
             realmResource.users().get(testUser.getId()).roles().realmLevel().add(List.of(credentialOfferRole));
@@ -220,15 +250,18 @@ public abstract class OID4VCIssuerTestBase {
 
         client = managedClient.admin().toRepresentation();
         pubClient = managedPublicClient.admin().toRepresentation();
+        abcaClient = managedAttestationBasedClient.admin().toRepresentation();
 
         jwtTypeCredentialScope = requireExistingCredentialScope(jwtTypeCredentialScopeName);
         sdJwtTypeCredentialScope = requireExistingCredentialScope(sdJwtTypeCredentialScopeName);
+        mdocTypeCredentialScope = requireExistingCredentialScope(mdocTypeCredentialScopeName);
         minimalJwtTypeCredentialScope = requireExistingCredentialScope(minimalJwtTypeCredentialScopeName);
         jwtNaturalPersonCredentialScope = requireExistingCredentialScope(jwtTypeNaturalPersonScopeName);
         sdJwtNaturalPersonCredentialScope = requireExistingCredentialScope(sdJwtTypeNaturalPersonScopeName);
+        mdocNaturalPersonCredentialScope = requireExistingCredentialScope(mdocTypeNaturalPersonScopeName);
 
         oauth.client(client.getClientId(), client.getSecret());
-        enableVerifiableCredentialEvents(testRealm);
+        enableVerifiableCredentialEvents();
 
         wallet = new OID4VCBasicWallet(keycloak, oauth);
     }
@@ -293,7 +326,7 @@ public abstract class OID4VCIssuerTestBase {
                 .orElseThrow(() -> new IllegalStateException("No such credential scope: " + scopeName));
     }
 
-    protected UserRepresentation getExistingUser(String username) {
+    protected UserRepresentation requireExistingUser(String username) {
         return testRealm.admin().users().search(username).stream()
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No such user: " + username));
@@ -353,6 +386,14 @@ public abstract class OID4VCIssuerTestBase {
         )));
 
         return component;
+    }
+
+    protected void ensureEcSigningKeyProvider(String keyName, String ellipticCurve, String algorithm, int priority) {
+        boolean alreadyPresent = testRealm.admin().components().query(null, KeyProvider.class.getName()).stream()
+                .anyMatch(component -> keyName.equals(component.getName()));
+        if (!alreadyPresent) {
+            testRealm.admin().components().add(getEcKeyProvider(keyName, ellipticCurve, algorithm, priority)).close();
+        }
     }
 
     protected String getBearerToken(OAuthClient oauthClient) {
@@ -443,6 +484,25 @@ public abstract class OID4VCIssuerTestBase {
         clientScopeResource.update(clientScope);
     }
 
+    protected ClientPolicyRepresentation getClientPolicy(String policyName) {
+        ClientPoliciesPoliciesResource clientPoliciesResource = testRealm.admin().clientPoliciesPoliciesResource();
+        ClientPoliciesRepresentation policies = clientPoliciesResource.getPolicies();
+        ClientPolicyRepresentation clientPolicy = policies.getPolicies().stream()
+                .filter(cp -> cp.getName().equals(policyName))
+                .findFirst().orElse(null);
+        return clientPolicy;
+    }
+
+    protected void setClientPolicyEnabled(String policyName, boolean enabled) {
+        ClientPoliciesPoliciesResource clientPoliciesResource = testRealm.admin().clientPoliciesPoliciesResource();
+        ClientPoliciesRepresentation policies = clientPoliciesResource.getPolicies();
+        ClientPolicyRepresentation clientPolicy = policies.getPolicies().stream()
+                .filter(cp -> cp.getName().equals(policyName))
+                .findFirst().orElseThrow(() -> new IllegalStateException("No such client policy: " + policyName));
+        clientPolicy.setEnabled(enabled);
+        clientPoliciesResource.updatePolicies(policies);
+    }
+
     // Private ---------------------------------------------------------------------------------------------------------
 
     private ComponentRepresentation createRsaKeyProviderComponent(KeyWrapper keyWrapper, String name, int priority) {
@@ -468,12 +528,30 @@ public abstract class OID4VCIssuerTestBase {
         return component;
     }
 
-    private void enableVerifiableCredentialEvents(ManagedRealm realm) {
-        RealmEventsConfigRepresentation realmEventsConfig = realm.admin().getRealmEventsConfig();
+    private static ComponentRepresentation getEcKeyProvider(String keyName, String ellipticCurve, String algorithm, int priority) {
+        ComponentRepresentation component = new ComponentRepresentation();
+        component.setProviderType(KeyProvider.class.getName());
+        component.setName(keyName);
+        component.setId(UUID.randomUUID().toString());
+        component.setProviderId("ecdsa-generated");
+        component.setConfig(new MultivaluedHashMap<>(Map.of(
+                "active", List.of("true"),
+                "priority", List.of(String.valueOf(priority)),
+                "enabled", List.of("true"),
+                "algorithm", List.of(algorithm),
+                "keyUse", List.of(KeyUse.SIG.name()),
+                "ecdsaEllipticCurveKey", List.of(ellipticCurve),
+                "ecGenerateCertificate", List.of("true")
+        )));
+        return component;
+    }
+
+    private void enableVerifiableCredentialEvents() {
+        RealmEventsConfigRepresentation realmEventsConfig = testRealm.admin().getRealmEventsConfig();
         List<String> enabledEventTypes = realmEventsConfig.getEnabledEventTypes();
         if (!enabledEventTypes.contains(EventType.VERIFIABLE_CREDENTIAL_NONCE_REQUEST.name())) {
             enabledEventTypes.add(EventType.VERIFIABLE_CREDENTIAL_NONCE_REQUEST.name());
-            realm.admin().updateRealmEventsConfig(realmEventsConfig);
+            testRealm.admin().updateRealmEventsConfig(realmEventsConfig);
         }
     }
 
@@ -486,10 +564,10 @@ public abstract class OID4VCIssuerTestBase {
         }
     }
 
-    public static class VCTestServerConfigRestCredentialOffer implements KeycloakServerConfig {
+    public static class VCTestServerWithABCAEnabled implements KeycloakServerConfig {
         @Override
         public KeycloakServerConfigBuilder configure(KeycloakServerConfigBuilder config) {
-            return config.features(Profile.Feature.OID4VC_VCI, Profile.Feature.OID4VC_VCI_REST_CREDENTIAL_OFFER);
+            return config.features(Profile.Feature.OID4VC_VCI, Profile.Feature.CLIENT_AUTH_ABCA);
         }
     }
 
@@ -500,10 +578,10 @@ public abstract class OID4VCIssuerTestBase {
         }
     }
 
-    public static class VCTestServerWithABCAEnabled implements KeycloakServerConfig {
+    public static class VCTestServerWithRestCredentialOfferEnabled implements KeycloakServerConfig {
         @Override
         public KeycloakServerConfigBuilder configure(KeycloakServerConfigBuilder config) {
-            return config.features(Profile.Feature.OID4VC_VCI, Profile.Feature.CLIENT_AUTH_ABCA);
+            return config.features(Profile.Feature.OID4VC_VCI, Profile.Feature.OID4VC_VCI_REST_CREDENTIAL_OFFER);
         }
     }
 
@@ -571,22 +649,31 @@ public abstract class OID4VCIssuerTestBase {
                     null
             ));
 
-            realm.users(getUserRepresentation("John Doe", Map.of("did", "did:key:1234"), List.of(), Collections.emptyMap()));
-            realm.users(getUserRepresentation("Alice Wonderland", Map.of("did", "did:key:5678"), List.of(), Map.of()));
+            realm.clientScopes(createMdocCredentialScope());
+            realm.clientScopes(createMdocNaturalPersonCredentialScope());
+
+            realm.users(createUser("John Doe", Map.of("did", "did:key:1234"), List.of(), Collections.emptyMap()));
+            realm.users(createUser("Alice Wonderland", Map.of("did", "did:key:5678"), List.of(), Map.of()));
 
             // Add Client Policies
             //
-            ClientProfileRepresentation profile = createClientPolicyProfile();
-            realm.clientPolicy(createClientPolicyOfferRequired(profile));
-            realm.clientProfile(profile);
+            ClientProfileRepresentation credentialIssuanceProfile = createClientProfileCredentialIssuance();
+            ClientProfileRepresentation haipConformanceProfile = createClientProfileHaipConformance();
+            realm.clientProfile(credentialIssuanceProfile);
+            realm.clientProfile(haipConformanceProfile);
+
+            ClientPolicyRepresentation offerRequiredPolicy = createClientPolicyOfferRequired(credentialIssuanceProfile);
+            ClientPolicyRepresentation haipConformancePolicy = createClientPolicyHaipConformance(haipConformanceProfile);
+            realm.clientPolicy(offerRequiredPolicy);
+            realm.clientPolicy(haipConformancePolicy);
 
             return realm;
         }
 
-        private ClientProfileRepresentation createClientPolicyProfile() {
+        private ClientProfileRepresentation createClientProfileCredentialIssuance() {
 
             ClientProfileRepresentation profile = new ClientProfileRepresentation();
-            profile.setName("oid4vci-client-profile");
+            profile.setName("oid4vc-credential-issuance-profile");
 
             ClientPolicyExecutorRepresentation executor = new ClientPolicyExecutorRepresentation();
             executor.setExecutorProviderId(CredentialClientPolicyExecutorFactory.PROVIDER_ID);
@@ -596,10 +683,137 @@ public abstract class OID4VCIssuerTestBase {
             return profile;
         }
 
+        private ClientProfileRepresentation createClientProfileHaipConformance() {
+
+            ClientProfileRepresentation profile = new ClientProfileRepresentation();
+            profile.setName("oid4vc-haip-profile"); // Modelled on fapi-2-dpop-security-profile
+            profile.setDescription("Client profile, which enforces clients to conform to the OpenID4VC High Assurance Interoperability Profile 1.0");
+
+            // confidential-client
+            //
+            ClientPolicyExecutorRepresentation confidentialClientEnforcer = new ClientPolicyExecutorRepresentation();
+            confidentialClientEnforcer.setExecutorProviderId(ConfidentialClientAcceptExecutorFactory.PROVIDER_ID);
+            confidentialClientEnforcer.setConfiguration(JsonNodeFactory.instance.objectNode());
+
+            // secure-client-authenticator
+            //
+            ClientPolicyExecutorRepresentation secureClientAuthenticator = new ClientPolicyExecutorRepresentation();
+            secureClientAuthenticator.setExecutorProviderId(SecureClientAuthenticatorExecutorFactory.PROVIDER_ID);
+            ObjectNode secureClientAuthenticatorConfig = JsonNodeFactory.instance.objectNode();
+            secureClientAuthenticatorConfig.putArray("allowed-client-authenticators")
+                    .add("client-jwt")
+                    .add("client-x509")
+                    .add("attestation-based"); // added for Attestation-Based Client Authentication (ABCA)
+            secureClientAuthenticatorConfig.put("default-client-authenticator", "attestation-based");
+            secureClientAuthenticator.setConfiguration(secureClientAuthenticatorConfig);
+
+            // secure-client-uris
+            //
+            ClientPolicyExecutorRepresentation secureClientUris = new ClientPolicyExecutorRepresentation();
+            secureClientUris.setExecutorProviderId(SecureClientUrisExecutorFactory.PROVIDER_ID);
+            secureClientUris.setConfiguration(JsonNodeFactory.instance.objectNode()
+                    .put("allow-http-on-localhost", true));
+
+            // secure-signature-algorithm
+            //
+            ClientPolicyExecutorRepresentation secureSigningAlgorithm = new ClientPolicyExecutorRepresentation();
+            secureSigningAlgorithm.setExecutorProviderId(SecureSigningAlgorithmExecutorFactory.PROVIDER_ID);
+            secureSigningAlgorithm.setConfiguration(JsonNodeFactory.instance.objectNode()
+                    .put("default-algorithm", "PS256"));
+
+            // consent-required (not used)
+            //
+
+            // secure-signature-algorithm-signed-jwt
+            //
+            ClientPolicyExecutorRepresentation secureSigningAlgorithmForSignedJwt = new ClientPolicyExecutorRepresentation();
+            secureSigningAlgorithmForSignedJwt.setExecutorProviderId(SecureSigningAlgorithmForSignedJwtExecutorFactory.PROVIDER_ID);
+            secureSigningAlgorithmForSignedJwt.setConfiguration(JsonNodeFactory.instance.objectNode()
+                    .put("require-client-assertion", false));
+
+            // full-scope-disabled
+            //
+            ClientPolicyExecutorRepresentation fullScopeDisabled = new ClientPolicyExecutorRepresentation();
+            fullScopeDisabled.setExecutorProviderId(FullScopeDisabledExecutorFactory.PROVIDER_ID);
+            fullScopeDisabled.setConfiguration(JsonNodeFactory.instance.objectNode()
+                    .put("auto-configure", false));
+
+            // reject-implicit-grant
+            //
+            ClientPolicyExecutorRepresentation rejectImplicitGrant = new ClientPolicyExecutorRepresentation();
+            rejectImplicitGrant.setExecutorProviderId(RejectImplicitGrantExecutorFactory.PROVIDER_ID);
+            rejectImplicitGrant.setConfiguration(JsonNodeFactory.instance.objectNode()
+                    .put("auto-configure", false));
+
+            // pkce-enforcer
+            //
+            ClientPolicyExecutorRepresentation pkceEnforcer = new ClientPolicyExecutorRepresentation();
+            pkceEnforcer.setExecutorProviderId(PKCEEnforcerExecutorFactory.PROVIDER_ID);
+            pkceEnforcer.setConfiguration(JsonNodeFactory.instance.objectNode()
+                    .put("auto-configure", false));
+
+            // secure-client-authentication-assertion
+            //
+            ClientPolicyExecutorRepresentation secureClientAuthenticationAssertion = new ClientPolicyExecutorRepresentation();
+            secureClientAuthenticationAssertion.setExecutorProviderId(SecureClientAuthenticationAssertionExecutorFactory.PROVIDER_ID);
+            secureClientAuthenticationAssertion.setConfiguration(JsonNodeFactory.instance.objectNode());
+
+            // secure-par-content
+            //
+            ClientPolicyExecutorRepresentation secureParContents = new ClientPolicyExecutorRepresentation();
+            secureParContents.setExecutorProviderId(SecureParContentsExecutorFactory.PROVIDER_ID);
+            secureParContents.setConfiguration(JsonNodeFactory.instance.objectNode());
+
+            ClientPolicyExecutorRepresentation dpopBindEnforcerExecutor = new ClientPolicyExecutorRepresentation();
+            dpopBindEnforcerExecutor.setExecutorProviderId(DPoPBindEnforcerExecutorFactory.PROVIDER_ID);
+            dpopBindEnforcerExecutor.setConfiguration(JsonNodeFactory.instance.objectNode()
+                    .put("auto-configure", false)
+                    .put("enforce-authorization-code-binding-to-dpop", false)
+                    .put("allow-only-refresh-token-binding", false));
+
+            profile.setExecutors(List.of(
+                    confidentialClientEnforcer,
+                    secureClientAuthenticator,
+                    secureClientUris,
+                    secureSigningAlgorithm,
+                    secureSigningAlgorithmForSignedJwt,
+                    fullScopeDisabled,
+                    rejectImplicitGrant,
+                    pkceEnforcer,
+                    secureClientAuthenticationAssertion,
+                    secureParContents,
+                    dpopBindEnforcerExecutor
+            ));
+
+            return profile;
+        }
+
+        private ClientPolicyRepresentation createClientPolicyHaipConformance(ClientProfileRepresentation profile) {
+
+            ClientPolicyRepresentation policy = new ClientPolicyRepresentation();
+            policy.setName(VCI_CLIENT_POLICY_HAIP);
+            policy.setDescription("Client policy that enables the oid4vc-haip-profile");
+            policy.setEnabled(false);
+
+            ClientPolicyConditionRepresentation condition = new ClientPolicyConditionRepresentation();
+            condition.setConditionProviderId("client-attributes");
+            ObjectNode config = JsonNodeFactory.instance.objectNode();
+            config.put("attributes", JsonSerialization.valueAsString(List.of(Map.of(
+                    "key", OID4VCI_ENABLED_ATTRIBUTE_KEY,
+                    "value", String.valueOf(true)
+            ))));
+            condition.setConfiguration(config);
+
+            policy.setConditions(List.of(condition));
+            policy.setProfiles(List.of(profile.getName()));
+
+            return policy;
+        }
+
         private ClientPolicyRepresentation createClientPolicyOfferRequired(ClientProfileRepresentation profile) {
 
             ClientPolicyRepresentation policy = new ClientPolicyRepresentation();
-            policy.setName(VC_POLICY_CREDENTIAL_OFFER_REQUIRED.getName());
+            policy.setName(VCI_CLIENT_POLICY_OFFER_REQUIRED);
             policy.setDescription("Client policy to determine whether a credential offers is required");
             policy.setEnabled(false);
 
@@ -664,7 +878,60 @@ public abstract class OID4VCIssuerTestBase {
             return cs;
         }
 
-        private UserRepresentation getUserRepresentation(
+        private CredentialScopeRepresentation createMdocCredentialScope() {
+            CredentialScopeRepresentation cs = new CredentialScopeRepresentation(mdocTypeCredentialScopeName)
+                    .setIncludeInTokenScope(true)
+                    .setExpiryInSeconds(15)
+                    .setCredentialConfigurationId(mdocTypeCredentialConfigurationIdName)
+                    .setCredentialIdentifier(mdocTypeCredentialScopeName)
+                    .setFormat(VCFormat.MSO_MDOC)
+                    .setVct(mdocTypeCredentialDocType)
+                    .setSigningAlg("ES256")
+                    .setCryptographicBindingMethods(List.of(CRYPTOGRAPHIC_BINDING_METHOD_COSE_KEY));
+            cs.setProtocolMappers(List.of(
+                    ProtocolMapperUtils.getUserAttributeMapper("given_name", "firstName", "org.iso.18013.5.1"),
+                    ProtocolMapperUtils.getUserAttributeMapper("family_name", "lastName", "org.iso.18013.5.1"),
+                    ProtocolMapperUtils.getSubjectIdMapper("id", UserModel.DID, "org.iso.18013.5.1")
+            ));
+
+            Map<String, String> attrs = Optional.ofNullable(cs.getAttributes()).orElseGet(HashMap::new);
+            attrs.put(VC_BINDING_REQUIRED, "true");
+            attrs.put(VC_BINDING_REQUIRED_PROOF_TYPES, "jwt");
+            attrs.put(VC_CRYPTOGRAPHIC_BINDING_METHODS, CRYPTOGRAPHIC_BINDING_METHOD_COSE_KEY);
+            cs.setAttributes(attrs);
+
+            return cs;
+        }
+
+        private CredentialScopeRepresentation createMdocNaturalPersonCredentialScope() {
+            CredentialScopeRepresentation cs = new CredentialScopeRepresentation(mdocTypeNaturalPersonScopeName)
+                    .setIncludeInTokenScope(true)
+                    .setExpiryInSeconds(15)
+                    .setCredentialConfigurationId(mdocTypeNaturalPersonScopeName)
+                    .setCredentialIdentifier(mdocTypeNaturalPersonScopeName)
+                    .setFormat(VCFormat.MSO_MDOC)
+                    .setVct(naturalPersonCredentialDocType)
+                    .setSupportedCredentialTypes(List.of(naturalPersonCredentialDocType))
+                    .setVcContexts(List.of(naturalPersonCredentialDocType))
+                    .setSigningAlg("ES256")
+                    .setCryptographicBindingMethods(List.of(CRYPTOGRAPHIC_BINDING_METHOD_COSE_KEY));
+            cs.setProtocolMappers(List.of(
+                    ProtocolMapperUtils.getSubjectIdMapper("id", UserModel.DID, "org.iso.18013.5.1"),
+                    ProtocolMapperUtils.getUserAttributeMapper("email", UserModel.EMAIL, "org.iso.18013.5.1"),
+                    ProtocolMapperUtils.getUserAttributeMapper("firstName", UserModel.FIRST_NAME, "org.iso.18013.5.1"),
+                    ProtocolMapperUtils.getUserAttributeMapper("familyName", UserModel.LAST_NAME, "org.iso.18013.5.1")
+            ));
+
+            Map<String, String> attrs = Optional.ofNullable(cs.getAttributes()).orElseGet(HashMap::new);
+            attrs.put(VC_BINDING_REQUIRED, "true");
+            attrs.put(VC_BINDING_REQUIRED_PROOF_TYPES, "jwt,attestation");
+            attrs.put(VC_CRYPTOGRAPHIC_BINDING_METHODS, CRYPTOGRAPHIC_BINDING_METHOD_COSE_KEY);
+            cs.setAttributes(attrs);
+
+            return cs;
+        }
+
+        private UserRepresentation createUser(
                 String fullName,
                 Map<String, String> attributes,
                 List<String> realmRoles,
@@ -691,7 +958,9 @@ public abstract class OID4VCIssuerTestBase {
                     .verifiableCredential(sdJwtTypeCredentialScopeName)
                     .verifiableCredential(minimalJwtTypeCredentialScopeName)
                     .verifiableCredential(jwtTypeNaturalPersonScopeName)
-                    .verifiableCredential(sdJwtTypeNaturalPersonScopeName);
+                    .verifiableCredential(sdJwtTypeNaturalPersonScopeName)
+                    .verifiableCredential(mdocTypeCredentialScopeName)
+                    .verifiableCredential(mdocTypeNaturalPersonScopeName);
 
             attributes.forEach(userBuilder::attribute);
 
@@ -716,7 +985,7 @@ public abstract class OID4VCIssuerTestBase {
         }
     }
 
-    public static class ConfidentialOID4VCIClient implements ClientConfig {
+    public static class OID4VCAttestationBasedClient implements ClientConfig {
 
         @Override
         public ClientBuilder configure(ClientBuilder client) {
@@ -726,6 +995,34 @@ public abstract class OID4VCIssuerTestBase {
                     minimalJwtTypeCredentialScopeName,
                     jwtTypeNaturalPersonScopeName,
                     sdJwtTypeNaturalPersonScopeName,
+                    mdocTypeCredentialScopeName,
+                    mdocTypeNaturalPersonScopeName,
+                    "email"
+            };
+            client.clientId(OID4VCI_ABCA_CLIENT_ID)
+                    .serviceAccountsEnabled(false)
+                    .directAccessGrantsEnabled(false)
+                    .authenticatorType("attestation-based")
+                    .defaultClientScopes("basic", "profile", "roles")
+                    .optionalClientScopes(optionalClientScopes)
+                    .attribute(OID4VCI_ENABLED_ATTRIBUTE_KEY, "true")
+                    .redirectUris("*");
+            return client;
+        }
+    }
+
+    public static class OID4VCConfidentialClient implements ClientConfig {
+
+        @Override
+        public ClientBuilder configure(ClientBuilder client) {
+            String[] optionalClientScopes = {
+                    jwtTypeCredentialScopeName,
+                    sdJwtTypeCredentialScopeName,
+                    minimalJwtTypeCredentialScopeName,
+                    jwtTypeNaturalPersonScopeName,
+                    sdJwtTypeNaturalPersonScopeName,
+                    mdocTypeCredentialScopeName,
+                    mdocTypeNaturalPersonScopeName,
                     "email"
             };
             client.clientId(OID4VCI_CLIENT_ID)
@@ -740,7 +1037,7 @@ public abstract class OID4VCIssuerTestBase {
         }
     }
 
-    public static class PublicOID4VCIClient implements ClientConfig {
+    public static class OID4VCPublicClient implements ClientConfig {
 
         @Override
         public ClientBuilder configure(ClientBuilder client) {
@@ -750,6 +1047,8 @@ public abstract class OID4VCIssuerTestBase {
                     minimalJwtTypeCredentialScopeName,
                     jwtTypeNaturalPersonScopeName,
                     sdJwtTypeNaturalPersonScopeName,
+                    mdocTypeCredentialScopeName,
+                    mdocTypeNaturalPersonScopeName,
                     "email"
             };
             client.clientId(OID4VCI_PUBLIC_CLIENT_ID)
@@ -833,6 +1132,14 @@ public abstract class OID4VCIssuerTestBase {
             return protocolMapperRepresentation;
         }
 
+        static ProtocolMapperRepresentation getSubjectIdMapper(String subjectProperty, String attributeName, String mdocNamespace) {
+            ProtocolMapperRepresentation protocolMapperRepresentation = getSubjectIdMapper(subjectProperty, attributeName);
+            Map<String, String> config = new HashMap<>(protocolMapperRepresentation.getConfig());
+            config.put(OID4VCMapper.MDOC_NAMESPACE, mdocNamespace);
+            protocolMapperRepresentation.setConfig(config);
+            return protocolMapperRepresentation;
+        }
+
         static ProtocolMapperRepresentation getUserAttributeMapper(String subjectProperty, String attributeName) {
             ProtocolMapperRepresentation protocolMapperRepresentation = new ProtocolMapperRepresentation();
             protocolMapperRepresentation.setName(attributeName + "-mapper");
@@ -844,6 +1151,14 @@ public abstract class OID4VCIssuerTestBase {
                             "claim.name", subjectProperty,
                             "userAttribute", attributeName)
             );
+            return protocolMapperRepresentation;
+        }
+
+        static ProtocolMapperRepresentation getUserAttributeMapper(String subjectProperty, String attributeName, String mdocNamespace) {
+            ProtocolMapperRepresentation protocolMapperRepresentation = getUserAttributeMapper(subjectProperty, attributeName);
+            Map<String, String> config = new HashMap<>(protocolMapperRepresentation.getConfig());
+            config.put(OID4VCMapper.MDOC_NAMESPACE, mdocNamespace);
+            protocolMapperRepresentation.setConfig(config);
             return protocolMapperRepresentation;
         }
 

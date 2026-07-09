@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates
+ * Copyright 2026 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,19 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.keycloak.crypto.elytron.test.mdoc;
 
-package org.keycloak.it.junit5.extension;
+import org.keycloak.mdoc.MdocCredentialCreationAndSigningTest;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-
-/**
- * {@link DryRun} is used to configure a non-running, non-augmenting distribution
- */
-@Target({ ElementType.METHOD, ElementType.TYPE })
-@Retention(RetentionPolicy.RUNTIME)
-public @interface DryRun {
-
+public class ElytronCryptoMdocCredentialCreationAndSigningTest extends MdocCredentialCreationAndSigningTest {
 }
