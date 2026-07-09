@@ -552,7 +552,7 @@ public class UserInfoTest extends AbstractKeycloakTest {
             AccessTokenResponse accessTokenResponse = executeGrantAccessTokenRequest(client);
 
             String realmName = "test";
-            runOnServer.run(RunHelpers.removeUserSessions(realmName));
+            runOnServer.run(RunHelpers.removeUserSessions());
 
             Response response = UserInfoClientUtil.executeUserInfoRequest_getMethod(client, accessTokenResponse.getToken());
 
@@ -745,13 +745,11 @@ public class UserInfoTest extends AbstractKeycloakTest {
 
             assertEquals(Status.UNAUTHORIZED.getStatusCode(), response.getStatus());
 
-            events.expect(EventType.USER_INFO_REQUEST_ERROR)
+            EventAssertion.assertError(events.poll()).type(EventType.USER_INFO_REQUEST_ERROR)
                     .error(Errors.INVALID_TOKEN)
-                    .user(Matchers.nullValue(String.class))
-                    .session(Matchers.nullValue(String.class))
-                    .detail(Details.AUTH_METHOD, Details.VALIDATE_ACCESS_TOKEN)
-                    .client((String) null)
-                    .assertEvent();
+                    .sessionId(null)
+                    .details(Details.AUTH_METHOD, Details.VALIDATE_ACCESS_TOKEN)
+                    .clientId(null);
 
             rep.setNotBefore(0);
             realm.update(rep);
@@ -788,7 +786,7 @@ public class UserInfoTest extends AbstractKeycloakTest {
         try {
             AccessTokenResponse accessTokenResponse = executeGrantAccessTokenRequest(client, true, true);
 
-            testingClient.testing().removeExpired("test");
+            runOnServer.run(RunHelpers.removeExpired());
 
             Response response = UserInfoClientUtil.executeUserInfoRequest_getMethod(client, accessTokenResponse.getToken());
 

@@ -76,7 +76,6 @@ import org.keycloak.models.RoleModel;
 import org.keycloak.models.ScopeContainerModel;
 import org.keycloak.models.UserConsentModel;
 import org.keycloak.models.UserModel;
-import org.keycloak.models.UserVerifiableCredentialModel;
 import org.keycloak.models.WebAuthnPolicy;
 import org.keycloak.models.WebAuthnPolicyPasswordlessDefaults;
 import org.keycloak.models.WebAuthnPolicyTwoFactorDefaults;
@@ -120,7 +119,6 @@ import org.keycloak.representations.idm.UserConsentRepresentation;
 import org.keycloak.representations.idm.UserFederationMapperRepresentation;
 import org.keycloak.representations.idm.UserFederationProviderRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
-import org.keycloak.representations.idm.oid4vc.UserVerifiableCredentialRepresentation;
 import org.keycloak.storage.ExportImportManager;
 import org.keycloak.storage.ImportRealmFromRepresentationEvent;
 import org.keycloak.storage.PartialImportRealmFromRepresentationEvent;
@@ -142,6 +140,7 @@ import static org.keycloak.models.utils.RepresentationToModel.createCredentials;
 import static org.keycloak.models.utils.RepresentationToModel.createFederatedIdentities;
 import static org.keycloak.models.utils.RepresentationToModel.createGroups;
 import static org.keycloak.models.utils.RepresentationToModel.createRoleMappings;
+import static org.keycloak.models.utils.RepresentationToModel.createVerifiableCredentials;
 import static org.keycloak.models.utils.RepresentationToModel.importGroup;
 import static org.keycloak.models.utils.RepresentationToModel.importRoles;
 import static org.keycloak.models.utils.StripSecretsUtils.stripSecrets;
@@ -1010,7 +1009,7 @@ public class DefaultExportImportManager implements ExportImportManager {
         createRoleMappings(userRep, user, newRealm);
         if (userRep.getClientConsents() != null) {
             for (UserConsentRepresentation consentRep : userRep.getClientConsents()) {
-                UserConsentModel consentModel = RepresentationToModel.toModel(newRealm, consentRep);
+                UserConsentModel consentModel = RepresentationToModel.toModel(newRealm, consentRep, session);
                 session.users().addConsent(newRealm, user.getId(), consentModel);
             }
         }
@@ -1019,12 +1018,7 @@ public class DefaultExportImportManager implements ExportImportManager {
             session.users().setNotBeforeForUser(newRealm, user, userRep.getNotBefore());
         }
 
-        if (userRep.getVerifiableCredentials() != null) {
-            for (UserVerifiableCredentialRepresentation credentialRep : userRep.getVerifiableCredentials()) {
-                UserVerifiableCredentialModel credentialModel = RepresentationToModel.toModel(credentialRep);
-                session.users().addVerifiableCredential(user.getId(), credentialModel);
-            }
-        }
+        createVerifiableCredentials(userRep, session, user);
 
         if (userRep.getServiceAccountClientId() != null) {
             String clientId = userRep.getServiceAccountClientId();
@@ -1681,7 +1675,7 @@ public class DefaultExportImportManager implements ExportImportManager {
         }
         if (userRep.getClientConsents() != null) {
             for (UserConsentRepresentation consentRep : userRep.getClientConsents()) {
-                UserConsentModel consentModel = RepresentationToModel.toModel(newRealm, consentRep);
+                UserConsentModel consentModel = RepresentationToModel.toModel(newRealm, consentRep, session);
                 federatedStorage.addConsent(newRealm, userRep.getId(), consentModel);
             }
         }
@@ -1743,7 +1737,7 @@ public class DefaultExportImportManager implements ExportImportManager {
                 }
 
                 for (GroupRepresentation groupRep : Optional.ofNullable(orgRep.getGroups()).orElse(Collections.emptyList())) {
-                    importOrganizationGroup(provider, orgModel, groupRep, null);
+                    importOrganizationGroup(provider, orgModel, newRealm, groupRep, null);
                 }
 
                 for (MemberRepresentation member : Optional.ofNullable(orgRep.getMembers()).orElse(Collections.emptyList())) {
@@ -1780,7 +1774,7 @@ public class DefaultExportImportManager implements ExportImportManager {
         }
     }
 
-    private void importOrganizationGroup(OrganizationProvider provider, OrganizationModel organization, GroupRepresentation groupRep, GroupModel parent) {
+    private void importOrganizationGroup(OrganizationProvider provider, OrganizationModel organization, RealmModel realm, GroupRepresentation groupRep, GroupModel parent) {
         GroupModel group = provider.createGroup(organization, groupRep.getId(), groupRep.getName(), parent);
 
         if (groupRep.getAttributes() != null) {
@@ -1789,9 +1783,34 @@ public class DefaultExportImportManager implements ExportImportManager {
             }
         }
 
+        if (groupRep.getRealmRoles() != null) {
+            for (String roleString : groupRep.getRealmRoles()) {
+                RoleModel role = realm.getRole(roleString.trim());
+                if (role == null) {
+                    role = realm.addRole(roleString.trim());
+                }
+                group.grantRole(role);
+            }
+        }
+        if (groupRep.getClientRoles() != null) {
+            for (Map.Entry<String, List<String>> entry : groupRep.getClientRoles().entrySet()) {
+                ClientModel client = realm.getClientByClientId(entry.getKey());
+                if (client == null) {
+                    throw new RuntimeException("Unable to find client role mappings for client: " + entry.getKey());
+                }
+                for (String roleName : entry.getValue()) {
+                    RoleModel role = client.getRole(roleName.trim());
+                    if (role == null) {
+                        role = client.addRole(roleName.trim());
+                    }
+                    group.grantRole(role);
+                }
+            }
+        }
+
         if (groupRep.getSubGroups() != null) {
             for (GroupRepresentation subGroup : groupRep.getSubGroups()) {
-                importOrganizationGroup(provider, organization, subGroup, group);
+                importOrganizationGroup(provider, organization, realm, subGroup, group);
             }
         }
     }
